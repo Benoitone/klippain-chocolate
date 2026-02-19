@@ -31,7 +31,7 @@ KLIPPER_PATH="${HOME}/klipper"
 FRIX_CONFIG_GIT_URL="https://github.com/Benoitone/klippain-chocolate.git"
 
 # for update purpose
-#NEW_INSTALL=false
+NEW_INSTALL=false
 
 
 set -eu
