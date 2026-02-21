@@ -52,20 +52,13 @@ function preflight_checks {
         exit -1
     fi
 
-    local install_klippain_answer
     if [ ! -f "${USER_CONFIG_PATH}/.VERSION" ]; then
         echo "[PRE-CHECK] New installation of Klippain detected!"
         echo "[PRE-CHECK] This install script will WIPE AND REPLACE your current Klipper config with the full Klippain system (a backup will be kept)"
         echo "[PRE-CHECK] Be sure that the printer is idle before continuing!"
-        
-        read < /dev/tty -rp "[PRE-CHECK] Are you sure want to proceed and install Klippain? (y/N) " install_klippain_answer
-        if [[ -z "$install_klippain_answer" ]]; then
-            install_klippain_answer="n"
-        fi
-        install_klippain_answer="${install_klippain_answer,,}"
 
-        if [[ "$install_klippain_answer" =~ ^(yes|y)$ ]]; then
-            printf "[PRE-CHECK] Installation confirmed! Continuing...\n\n"
+        if prompt "[PRE-CHECK] Are you sure want to proceed and install Klippain? (y/N) " n ; then
+            echo -e "[PRE-CHECK] Installation confirmed! Continuing...\n"
         else
             echo "[PRE-CHECK] Installation was canceled!"
             exit -1
@@ -100,7 +93,7 @@ function check_download {
 
         echo -e "[DOWNLOAD] Klippain repository already found locally.\n" \
             "  Repo : $frixrepourl branch : $currentbranch\nContinuing...\n"
-        
+
         # if the branch requested is different than the current one, ask the user if he wants to switch
         if [[ "${nextbranch}" != "${currentbranch}" ]]; then
             if prompt "[UPDATE] Current branch is '$currentbranch', do you want to switch to branch '$nextbranch'? (Y/n) " y; then
@@ -185,9 +178,17 @@ function install_config {
     elif $REINSTALL_TEMPLATES; then
         echo "[INSTALL] Reinstalling config templates as requested by user!"
         echo -e "[INSTALL] ${RED}WARNING: this will OVERWRITE your current mcu.cfg file!${DEFAULT}"
-        prompt "[INSTALL] Are you sure you want to reinstall the config templates? (y/N)" n &&
+        if prompt "[INSTALL] Are you sure you want to reinstall the config templates? (y/N)" n; then
+                # Backup the old mcu.cfg before overwriting it
+            if [ -f "${USER_CONFIG_PATH}/mcu.cfg" ]; then
+                local backup_name="mcu.cfg.$(date +'%y-%m-%d_%H%M').sav"
+                echo "[INSTALL] backup of the old mcu.cfg under the name ${backup_name}"
+                cp "${USER_CONFIG_PATH}/mcu.cfg" "${USER_CONFIG_PATH}/${backup_name}"
+            fi
+        # File Reset
         cat /dev/null > ${USER_CONFIG_PATH}/mcu.cfg &&
         install_mcu_templates
+        fi
     else
         printf "[INSTALL] Existing installation detected: skipping config templates installation!\n\n"
     fi
@@ -195,14 +196,14 @@ function install_config {
     # CHMOD the scripts to be sure they are all executables (Git should keep the modes on files but it's to be sure)
     chmod +x ${FRIX_CONFIG_PATH}/*.sh
     chmod +x ${FRIX_CONFIG_PATH}/scripts/*.py
-    
+
     # Symlink the gcode_shell_command.py file in the correct Klipper folder (erased to always get the last version) not Kalico
     if [ ! -f "${KLIPPER_PATH}/klippy/extras/gcode_shell_command.py" ] || [ -L "${KLIPPER_PATH}/klippy/extras/gcode_shell_command.py" ]; then
         ln -fsn ${FRIX_CONFIG_PATH}/scripts/gcode_shell_command.py ${KLIPPER_PATH}/klippy/extras
     else
         echo "[INSTALL] gcode_shell_command.py plugin already installed, skipping..."
     fi
-    
+
 
     # Create or update the config version tracking file in the user config directory
     git -C ${FRIX_CONFIG_PATH} rev-parse HEAD > ${USER_CONFIG_PATH}/.VERSION
@@ -288,13 +289,38 @@ function install_mcu_templates {
         fi
     fi
 
+    # Next see if the user use a Scanner type Cartographer3D
+    # Check if the user wants to install a Scanner MCU template
+    if prompt "[CONFIG] Do you have an Scanner (like Cartographer3D) MCU and want to install a template? (y/N) " n; then
+        file_list=()
+        while IFS= read -r -d '' file; do
+            file_list+=("$file")
+        done < <(find "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/scanner" -maxdepth 1 -type f -print0)
+        file_list=($(printf '%s\n' "${file_list[@]}" | sort))
+        echo "[CONFIG] Please select your Scanner MCU in the following list:"
+        for i in "${!file_list[@]}"; do
+            echo "  $((i+1))) $(basename "${file_list[i]}")"
+        done
+
+        read < /dev/tty -p "[CONFIG] Template to install (or 0 to skip): " scanner_template
+        if [[ "$scanner_template" -gt 0 ]]; then
+            # If the user selected a file, copy its content into the mcu.cfg file
+            filename=$(basename "${file_list[$((scanner_template-1))]}")
+            cat "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/scanner/$filename" >> ${USER_CONFIG_PATH}/mcu.cfg
+            echo "[CONFIG] Template '$filename' inserted into your mcu.cfg user file"
+            printf "[CONFIG] Note: keep in mind that you have to install the Cartographer3D backend manually to use a cartographer scanner. See the Klippain documentation for more information!\n\n"
+        else
+            printf "[CONFIG] No scanner template selected. Skip and continuing...\n\n"
+        fi
+    fi
+
    # Finally see if the user use an expander board
     # Check if the user wants to install an expander MCU template
     if prompt "[CONFIG] Do you have an expander board and want to install a template? (y/N) " n; then
         file_list=()
         while IFS= read -r -d '' file; do
             file_list+=("$file")
-        done < <(find "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/expand" -maxdepth 1 -type f -print0)
+        done < <(find "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/expander" -maxdepth 1 -type f -print0)
         file_list=($(printf '%s\n' "${file_list[@]}" | sort))
         echo "[CONFIG] Please select your expander MCU in the following list:"
         for i in "${!file_list[@]}"; do
@@ -305,7 +331,7 @@ function install_mcu_templates {
         if [[ "$expander_template" -gt 0 ]]; then
             # If the user selected a file, copy its content into the mcu.cfg file
             filename=$(basename "${file_list[$((expander_template-1))]}")
-            cat "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/expand/$filename" >> ${USER_CONFIG_PATH}/mcu.cfg
+            cat "${FRIX_CONFIG_PATH}/user_templates/mcu_defaults/expander/$filename" >> ${USER_CONFIG_PATH}/mcu.cfg
             printf "[CONFIG] Template '$filename' inserted into your mcu.cfg user file\n\n"
         else
             printf "[CONFIG] No expander template selected. Skip and continuing...\n\n"
@@ -352,9 +378,9 @@ DEFAULT=$'\033[0m'
 prompt() {
   local default="Yn"
   [ $# -eq 2 ] && [ ${2^} = "N" ] && default="yN"
- 
+
   while true; do
-    read -p "${MAGENTA}$1${DEFAULT}" yn
+    read -p "${MAGENTA}$1${DEFAULT}" yn < /dev/tty
     case $yn in
     [Yy]*) return 0 ;;
     "")
