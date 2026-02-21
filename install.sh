@@ -52,20 +52,13 @@ function preflight_checks {
         exit -1
     fi
 
-    local install_klippain_answer
     if [ ! -f "${USER_CONFIG_PATH}/.VERSION" ]; then
         echo "[PRE-CHECK] New installation of Klippain detected!"
         echo "[PRE-CHECK] This install script will WIPE AND REPLACE your current Klipper config with the full Klippain system (a backup will be kept)"
         echo "[PRE-CHECK] Be sure that the printer is idle before continuing!"
-        
-        read < /dev/tty -rp "[PRE-CHECK] Are you sure want to proceed and install Klippain? (y/N) " install_klippain_answer
-        if [[ -z "$install_klippain_answer" ]]; then
-            install_klippain_answer="n"
-        fi
-        install_klippain_answer="${install_klippain_answer,,}"
 
-        if [[ "$install_klippain_answer" =~ ^(yes|y)$ ]]; then
-            printf "[PRE-CHECK] Installation confirmed! Continuing...\n\n"
+        if prompt "[PRE-CHECK] Are you sure want to proceed and install Klippain? (y/N) " n ; then
+            echo -e "[PRE-CHECK] Installation confirmed! Continuing...\n"
         else
             echo "[PRE-CHECK] Installation was canceled!"
             exit -1
@@ -100,7 +93,7 @@ function check_download {
 
         echo -e "[DOWNLOAD] Klippain repository already found locally.\n" \
             "  Repo : $frixrepourl branch : $currentbranch\nContinuing...\n"
-        
+
         # if the branch requested is different than the current one, ask the user if he wants to switch
         if [[ "${nextbranch}" != "${currentbranch}" ]]; then
             if prompt "[UPDATE] Current branch is '$currentbranch', do you want to switch to branch '$nextbranch'? (Y/n) " y; then
@@ -203,14 +196,14 @@ function install_config {
     # CHMOD the scripts to be sure they are all executables (Git should keep the modes on files but it's to be sure)
     chmod +x ${FRIX_CONFIG_PATH}/*.sh
     chmod +x ${FRIX_CONFIG_PATH}/scripts/*.py
-    
+
     # Symlink the gcode_shell_command.py file in the correct Klipper folder (erased to always get the last version) not Kalico
     if [ ! -f "${KLIPPER_PATH}/klippy/extras/gcode_shell_command.py" ] || [ -L "${KLIPPER_PATH}/klippy/extras/gcode_shell_command.py" ]; then
         ln -fsn ${FRIX_CONFIG_PATH}/scripts/gcode_shell_command.py ${KLIPPER_PATH}/klippy/extras
     else
         echo "[INSTALL] gcode_shell_command.py plugin already installed, skipping..."
     fi
-    
+
 
     # Create or update the config version tracking file in the user config directory
     git -C ${FRIX_CONFIG_PATH} rev-parse HEAD > ${USER_CONFIG_PATH}/.VERSION
@@ -385,9 +378,9 @@ DEFAULT=$'\033[0m'
 prompt() {
   local default="Yn"
   [ $# -eq 2 ] && [ ${2^} = "N" ] && default="yN"
- 
+
   while true; do
-    read -p "${MAGENTA}$1${DEFAULT}" yn
+    read -p "${MAGENTA}$1${DEFAULT}" yn < /dev/tty
     case $yn in
     [Yy]*) return 0 ;;
     "")
